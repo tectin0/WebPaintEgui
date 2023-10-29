@@ -1,0 +1,56 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "cargo build release frontend",
+      "type": "shell",
+      "command": "$env:RUSTFLAGS='--cfg=web_sys_unstable_apis'; cargo build --release --target wasm32-unknown-unknown --manifest-path frontend/Cargo.toml",
+      "presentation": {
+        "echo": true,
+        "reveal": "silent",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      }
+    },
+    {
+      "label": "wasm-bindgen",
+      "type": "shell",
+      "command": "wasm-bindgen \".\\target\\wasm32-unknown-unknown\\release\\frontend.wasm\" --out-dir public/wasm --no-modules --no-typescript",
+      "presentation": {
+        "echo": true,
+        "reveal": "silent",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      }
+    },
+    {
+      "label": "basic http server",
+      "type": "shell",
+      "command": "basic-http-server --addr 0.0.0.0:8000 frontend"
+    },
+    {
+      "label": "update wasm",
+      "type": "shell",
+      "command": "echo updating..",
+      "dependsOn": ["cargo build release frontend", "wasm-bindgen"],
+      "dependsOrder": "sequence",
+      "presentation": {
+        "echo": true,
+        "reveal": "silent",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      }
+    },
+    {
+      "label": "cargo run release backend",
+      "type": "shell",
+      "command": "cargo run --release --manifest-path backend/Cargo.toml"
+    }
+  ]
+}
