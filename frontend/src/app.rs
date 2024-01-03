@@ -7,6 +7,7 @@ use egui::{
 };
 use egui::{epaint, DragValue};
 
+use log::debug;
 use reqwest::Client as ReqwestClient;
 
 use shared::{ChangedLines, ClientID, Line, StrokeX};
@@ -15,6 +16,7 @@ use wasm_bindgen_futures::spawn_local;
 
 use std::collections::HashMap;
 use std::ops::Add;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use shared::Lines;
@@ -25,6 +27,30 @@ use anyhow::Result;
 use async_recursion::async_recursion;
 
 use lazy_static::lazy_static;
+
+enum UserAgent {
+    Chrome,
+    Firefox,
+    Edge,
+    Other,
+}
+
+impl FromStr for UserAgent {
+    type Err = ();
+
+    fn from_str(user_agent: &str) -> Result<Self, Self::Err> {
+        if user_agent.contains("Chrome") {
+            Ok(UserAgent::Chrome)
+        } else if user_agent.contains("Firefox") {
+            Ok(UserAgent::Firefox)
+        } else if user_agent.contains("Edg") {
+            Ok(UserAgent::Edge)
+        } else {
+            Ok(UserAgent::Other)
+        }
+    }
+}
+
 pub struct App {
     #[allow(unused)]
     client_id: ClientID,
@@ -39,15 +65,28 @@ pub struct App {
     current_line_id: Option<usize>,
     get_lines_timer: Option<f64>,
     stroke: Stroke,
+    original_canvas_rect: Option<Rect>,
+    user_agent: UserAgent,
+    user_agent_position_correction: Pos2,
 }
 
 const IMAGES: &[(&str, &[u8])] = &include!(concat!("../../assets/", "/images.rs"));
 
 impl App {
     pub fn new(cc: &CreationContext<'_>, host: String, client_id: String) -> Self {
+        let user_agent = &cc.integration_info.web_info.user_agent;
+        log::debug!("User agent: {}", user_agent);
+
         for (name, data) in IMAGES {
-            println!("File {} is {} bytes", name, data.len());
+            log::trace!("File {} is {} bytes", name, data.len());
         }
+
+        let user_agent = UserAgent::from_str(user_agent).unwrap();
+
+        let user_agent_position_correction = match user_agent {
+            UserAgent::Chrome => Pos2::new(0.5, 0.5),
+            _ => Pos2::new(1.0, 1.0),
+        };
 
         let texture_handles: HashMap<TextureId, TextureHandle> = IMAGES
             .iter()
@@ -91,6 +130,9 @@ impl App {
             current_line_id: None,
             get_lines_timer: None,
             stroke: Stroke::new(5.0, Color32::RED),
+            original_canvas_rect: None,
+            user_agent,
+            user_agent_position_correction,
         }
     }
 }
@@ -200,6 +242,15 @@ impl eframe::App for App {
 
             let (mut response, painter) = ui.allocate_painter(canvas_size, Sense::drag());
 
+            if self.original_canvas_rect.is_none() {
+                self.original_canvas_rect = Some(response.rect);
+
+                debug!("Original canvas rect: {:?}", self.original_canvas_rect);
+                debug!("Background rect: {:?}", background_rect);
+                debug!("Canvas size: {:?}", canvas_size);
+                debug!("Background size: {:?}", background_size);
+            }
+
             painter.image(
                 self.current_background_id,
                 background_rect,
@@ -207,7 +258,8 @@ impl eframe::App for App {
                 Color32::WHITE,
             );
 
-            let from_screen = emath::RectTransform::from_to(background_rect, response.rect);
+            let from_screen =
+                emath::RectTransform::from_to(background_rect, self.original_canvas_rect.unwrap());
 
             let to_screen = from_screen.inverse();
 
@@ -323,13 +375,20 @@ impl eframe::App for App {
                                 .expect(&format!("Failed to lock lines at line {}", line!()));
                             unlocked.clone()
                         };
+
+                        if let Some(last_line) = lines.iter().last() {
+                            log::debug!("Last line: {:?}", last_line);
+                        }
+
                         let host = self.host.clone();
+                        let canvas_size = Some(self.original_canvas_rect.unwrap().size().into());
 
                         spawn_local(async move {
                             let message = Message {
                                 lines,
                                 changed_lines: None,
                                 flag: None,
+                                canvas_size,
                             };
 
                             match send_message(&host, message).await {
@@ -412,6 +471,13 @@ impl eframe::App for App {
             let changed_lines = self.changed_lines.clone();
 
             let host = self.host.clone();
+            let canvas_size = match self.original_canvas_rect {
+                Some(original_canvas_rect) => original_canvas_rect.size().into(),
+                None => {
+                    log::error!("Failed to get canvas size before `get_message`");
+                    return;
+                }
+            };
 
             spawn_local(async move {
                 let get_lines = match get_message(&host).await {
@@ -446,7 +512,12 @@ impl eframe::App for App {
                             .0
                             .extend(changed_lines.0.iter().cloned());
 
-                        lines.merge(get_lines.lines, &Some(other_changed_lines));
+                        lines.merge(
+                            get_lines.lines,
+                            &Some(other_changed_lines),
+                            &canvas_size,
+                            shared::MergeMode::ToCanvas,
+                        );
                     }
                 }
             });

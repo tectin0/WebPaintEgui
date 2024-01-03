@@ -230,11 +230,25 @@ fn handle_connection(
 
             let other_lines = message.lines;
             let changed_lines = message.changed_lines;
+            let canvas_size = match message.canvas_size {
+                Some(canvas_size) => canvas_size,
+                None => {
+                    return Err(anyhow::anyhow!(
+                        "Failed to get canvas size from request: {:?}",
+                        http_request
+                    ))?
+                }
+            };
 
             debug!("Received lines: {:?}", other_lines.keys());
             debug!("Current lines: {:?}", state.lines.keys());
 
-            state.lines.merge(other_lines, &changed_lines);
+            state.lines.merge(
+                other_lines,
+                &changed_lines,
+                &canvas_size,
+                shared::MergeMode::FromCanvas,
+            );
 
             if changed_lines.is_some() {
                 let changed_lines = changed_lines.unwrap().0;
@@ -301,6 +315,7 @@ fn handle_connection(
                 lines: lines.clone(),
                 changed_lines,
                 flag,
+                canvas_size: None,
             };
 
             let response = serde_json::to_string(&message).unwrap() + "\r\n\r\n";

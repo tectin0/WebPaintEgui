@@ -2,7 +2,7 @@ pub mod config;
 
 use std::{collections::HashMap, fmt::Display, ops::Deref};
 
-use egui::{ahash::HashSet, Color32, Pos2, Rgba, Stroke};
+use egui::{ahash::HashSet, Color32, Pos2, Rgba, Stroke, Vec2};
 use serde::{Deserialize, Serialize};
 
 use anyhow::Result;
@@ -33,8 +33,26 @@ impl ClientID {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct SPos2(pub Pos2);
+
+impl SPos2 {
+    pub fn new(x: f32, y: f32) -> Self {
+        Self(Pos2::new(x, y))
+    }
+}
+
+impl From<Pos2> for SPos2 {
+    fn from(pos: Pos2) -> Self {
+        Self(pos)
+    }
+}
+
+impl From<Vec2> for SPos2 {
+    fn from(vec: Vec2) -> Self {
+        Self(Pos2::new(vec.x, vec.y))
+    }
+}
 
 impl Serialize for SPos2 {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -127,6 +145,25 @@ impl Line {
             flag: None,
         }
     }
+
+    pub fn from_canvas(&mut self, canvas_size: &SPos2) {
+        for pos in self.coordinates.iter_mut() {
+            pos.0.x /= canvas_size.0.x;
+            pos.0.y /= canvas_size.0.y;
+        }
+    }
+
+    pub fn to_canvas(&mut self, canvas_size: &SPos2) {
+        for pos in self.coordinates.iter_mut() {
+            pos.0.x *= canvas_size.0.x;
+            pos.0.y *= canvas_size.0.y;
+        }
+    }
+}
+
+pub enum MergeMode {
+    ToCanvas,
+    FromCanvas,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
@@ -141,7 +178,13 @@ impl Deref for Lines {
 }
 
 impl Lines {
-    pub fn merge(&mut self, other: Self, changed_lines: &Option<ChangedLines>) {
+    pub fn merge(
+        &mut self,
+        other: Self,
+        changed_lines: &Option<ChangedLines>,
+        canvas_size: &SPos2,
+        merge_mode: MergeMode,
+    ) {
         let are_changed_lines = changed_lines.is_some();
 
         let mut changed_lines = changed_lines.clone().unwrap_or_default();
@@ -151,10 +194,30 @@ impl Lines {
                 Some(line) => {
                     if are_changed_lines && changed_lines.0.remove(line_id) {
                         *line = other_line.clone();
+
+                        match merge_mode {
+                            MergeMode::ToCanvas => {
+                                line.to_canvas(canvas_size);
+                            }
+                            MergeMode::FromCanvas => {
+                                line.from_canvas(canvas_size);
+                            }
+                        }
                     }
                 }
                 None => {
-                    self.0.insert(*line_id, other_line.clone());
+                    let mut line = other_line.clone();
+
+                    match merge_mode {
+                        MergeMode::ToCanvas => {
+                            line.to_canvas(canvas_size);
+                        }
+                        MergeMode::FromCanvas => {
+                            line.from_canvas(canvas_size);
+                        }
+                    }
+
+                    self.0.insert(*line_id, line);
                 }
             }
         }
@@ -197,4 +260,5 @@ pub struct Message {
     pub lines: Lines,
     pub changed_lines: Option<ChangedLines>,
     pub flag: Option<Flag>,
+    pub canvas_size: Option<SPos2>,
 }
