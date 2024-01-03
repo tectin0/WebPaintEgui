@@ -10,7 +10,7 @@ use egui::{epaint, DragValue};
 use log::debug;
 use reqwest::Client as ReqwestClient;
 
-use shared::{ChangedLines, ClientID, Line, StrokeX};
+use shared::{ChangedLines, ClientID, DSRect, Line, StrokeX};
 use shared::{Flag, Message};
 use wasm_bindgen_futures::spawn_local;
 
@@ -381,14 +381,14 @@ impl eframe::App for App {
                         }
 
                         let host = self.host.clone();
-                        let canvas_size = Some(self.original_canvas_rect.unwrap().size().into());
+                        let canvas_rect = Some(DSRect(self.original_canvas_rect.unwrap()));
 
                         spawn_local(async move {
                             let message = Message {
                                 lines,
                                 changed_lines: None,
                                 flag: None,
-                                canvas_size,
+                                canvas_rect,
                             };
 
                             match send_message(&host, message).await {
@@ -471,8 +471,8 @@ impl eframe::App for App {
             let changed_lines = self.changed_lines.clone();
 
             let host = self.host.clone();
-            let canvas_size = match self.original_canvas_rect {
-                Some(original_canvas_rect) => original_canvas_rect.size().into(),
+            let canvas_rect = match self.original_canvas_rect {
+                Some(original_canvas_rect) => DSRect(original_canvas_rect),
                 None => {
                     log::error!("Failed to get canvas size before `get_message`");
                     return;
@@ -515,7 +515,7 @@ impl eframe::App for App {
                         lines.merge(
                             get_lines.lines,
                             &Some(other_changed_lines),
-                            &canvas_size,
+                            &canvas_rect,
                             shared::MergeMode::ToCanvas,
                         );
                     }

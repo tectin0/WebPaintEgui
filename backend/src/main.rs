@@ -230,7 +230,7 @@ fn handle_connection(
 
             let other_lines = message.lines;
             let changed_lines = message.changed_lines;
-            let canvas_size = match message.canvas_size {
+            let canvas_rect = match message.canvas_rect {
                 Some(canvas_size) => canvas_size,
                 None => {
                     return Err(anyhow::anyhow!(
@@ -246,7 +246,7 @@ fn handle_connection(
             state.lines.merge(
                 other_lines,
                 &changed_lines,
-                &canvas_size,
+                &canvas_rect,
                 shared::MergeMode::FromCanvas,
             );
 
@@ -315,7 +315,7 @@ fn handle_connection(
                 lines: lines.clone(),
                 changed_lines,
                 flag,
-                canvas_size: None,
+                canvas_rect: None,
             };
 
             let response = serde_json::to_string(&message).unwrap() + "\r\n\r\n";

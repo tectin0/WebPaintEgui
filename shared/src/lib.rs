@@ -2,7 +2,7 @@ pub mod config;
 
 use std::{collections::HashMap, fmt::Display, ops::Deref};
 
-use egui::{ahash::HashSet, Color32, Pos2, Rgba, Stroke, Vec2};
+use egui::{ahash::HashSet, Color32, Pos2, Rect, Rgba, Stroke, Vec2};
 use serde::{Deserialize, Serialize};
 
 use anyhow::Result;
@@ -146,17 +146,17 @@ impl Line {
         }
     }
 
-    pub fn from_canvas(&mut self, canvas_size: &SPos2) {
+    pub fn from_canvas(&mut self, canvas_rect: &DSRect) {
         for pos in self.coordinates.iter_mut() {
-            pos.0.x /= canvas_size.0.x;
-            pos.0.y /= canvas_size.0.y;
+            pos.0.x = (pos.0.x - canvas_rect.min.x) / canvas_rect.width();
+            pos.0.y = (pos.0.y - canvas_rect.min.y) / canvas_rect.height();
         }
     }
 
-    pub fn to_canvas(&mut self, canvas_size: &SPos2) {
+    pub fn to_canvas(&mut self, canvas_rect: &DSRect) {
         for pos in self.coordinates.iter_mut() {
-            pos.0.x *= canvas_size.0.x;
-            pos.0.y *= canvas_size.0.y;
+            pos.0.x = pos.0.x * canvas_rect.width() + canvas_rect.min.x;
+            pos.0.y = pos.0.y * canvas_rect.height() + canvas_rect.min.y;
         }
     }
 }
@@ -182,7 +182,7 @@ impl Lines {
         &mut self,
         other: Self,
         changed_lines: &Option<ChangedLines>,
-        canvas_size: &SPos2,
+        canvas_rect: &DSRect,
         merge_mode: MergeMode,
     ) {
         let are_changed_lines = changed_lines.is_some();
@@ -197,10 +197,10 @@ impl Lines {
 
                         match merge_mode {
                             MergeMode::ToCanvas => {
-                                line.to_canvas(canvas_size);
+                                line.to_canvas(canvas_rect);
                             }
                             MergeMode::FromCanvas => {
-                                line.from_canvas(canvas_size);
+                                line.from_canvas(canvas_rect);
                             }
                         }
                     }
@@ -210,10 +210,10 @@ impl Lines {
 
                     match merge_mode {
                         MergeMode::ToCanvas => {
-                            line.to_canvas(canvas_size);
+                            line.to_canvas(canvas_rect);
                         }
                         MergeMode::FromCanvas => {
-                            line.from_canvas(canvas_size);
+                            line.from_canvas(canvas_rect);
                         }
                     }
 
@@ -255,10 +255,47 @@ impl Display for Peer {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct DSRect(pub Rect);
+
+impl Deref for DSRect {
+    type Target = Rect;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Default for DSRect {
+    fn default() -> Self {
+        Self(Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0)))
+    }
+}
+
+impl Serialize for DSRect {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let min = self.0.min;
+        let max = self.0.max;
+
+        (min.x, min.y, max.x, max.y).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for DSRect {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let (min_x, min_y, max_x, max_y) = Deserialize::deserialize(deserializer)?;
+
+        Ok(Self(Rect::from_min_max(
+            Pos2::new(min_x, min_y),
+            Pos2::new(max_x, max_y),
+        )))
+    }
+}
+
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct Message {
     pub lines: Lines,
     pub changed_lines: Option<ChangedLines>,
     pub flag: Option<Flag>,
-    pub canvas_size: Option<SPos2>,
+    pub canvas_rect: Option<DSRect>,
 }
