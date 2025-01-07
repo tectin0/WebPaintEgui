@@ -1,5 +1,6 @@
 use eframe::CreationContext;
 
+use eframe::wgpu::Color;
 use egui::epaint::CircleShape;
 use egui::{
     emath, pos2, Color32, ColorImage, Pos2, Rect, Sense, Shape, Stroke, TextureHandle, TextureId,
@@ -8,6 +9,7 @@ use egui::{
 use egui::{epaint, DragValue};
 
 use log::debug;
+use rand::Rng;
 use reqwest::Client as ReqwestClient;
 
 use shared::{ChangedLines, ClientID, DSRect, Line, StrokeX};
@@ -27,6 +29,25 @@ use anyhow::Result;
 use async_recursion::async_recursion;
 
 use lazy_static::lazy_static;
+
+const COLORS: [Color32; 10] = [
+    Color32::RED,
+    Color32::GREEN,
+    Color32::BLUE,
+    Color32::YELLOW,
+    // cyan
+    Color32::from_rgb(0, 255, 255),
+    // magenta
+    Color32::from_rgb(255, 0, 255),
+    // orange
+    Color32::from_rgb(255, 165, 0),
+    // purple
+    Color32::from_rgb(128, 0, 128),
+    // pink
+    Color32::from_rgb(255, 192, 203),
+    // brown
+    Color32::from_rgb(165, 42, 42),
+];
 
 enum UserAgent {
     Chrome,
@@ -117,8 +138,14 @@ impl App {
                 .expect(format!("Failed to parse client id {}", client_id).as_str()),
         );
 
+        let connection_number = client_id.0 % 100;
+
+        let color_index = connection_number.min(COLORS.len() as u32 - 1) as usize;
+
+        let color = COLORS[color_index];
+
         Self {
-            client_id: client_id,
+            client_id,
             host: host.to_string(),
             is_dark: true,
             texture_handles,
@@ -129,7 +156,7 @@ impl App {
             changed_lines: Arc::new(Mutex::new(ChangedLines::default())),
             current_line_id: None,
             get_lines_timer: None,
-            stroke: Stroke::new(5.0, Color32::RED),
+            stroke: Stroke::new(5.0, color),
             original_canvas_rect: None,
             user_agent,
             user_agent_position_correction,

@@ -51,6 +51,11 @@
       "label": "cargo run release backend",
       "type": "shell",
       "command": "cargo run --release --manifest-path backend/Cargo.toml"
+    },
+    {
+      "label": "cross build release backend",
+      "type": "shell",
+      "command": "cross build --release --target x86_64-unknown-linux-gnu --manifest-path backend/Cargo.toml"
     }
   ]
 }

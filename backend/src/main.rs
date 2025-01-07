@@ -173,7 +173,7 @@ fn handle_connection(
             let client_id = match state.clients.get(peer.ip()?) {
                 Some(client) => client.id,
                 None => {
-                    let client_id = ClientID::new();
+                    let client_id = ClientID::new(state.clients.len() as u32);
                     state
                         .clients
                         .insert(peer.ip()?.to_string(), Client { id: client_id });

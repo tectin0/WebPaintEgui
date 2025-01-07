@@ -28,8 +28,12 @@ impl Deref for ClientID {
 }
 
 impl ClientID {
-    pub fn new() -> Self {
-        Self(rand::random())
+    pub fn new(number_of_connections: u32) -> Self {
+        let mut random_number = rand::random::<u32>();
+        random_number = (random_number / 100) * 100;
+        random_number = random_number + number_of_connections;
+
+        Self(random_number)
     }
 }
 
