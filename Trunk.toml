@@ -1,0 +1,9 @@
+[build]
+filehash = false
+
+[[proxy]]
+rewrite = "/backend"
+backend = "http://localhost:8432/"
+
+[watch]
+ignore = ["backend", "shared", "assets"]
