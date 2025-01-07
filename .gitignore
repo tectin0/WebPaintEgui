@@ -13,3 +13,4 @@ target_wasm
 .lycheecache
 
 assets/images
+assets/images.in
