@@ -1,0 +1,25 @@
+services:
+  backend:
+    container_name: webpaint-backend
+    hostname: backend
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    volumes:
+      - ./backend:/usr/src/app/backend
+      - ./shared:/usr/src/app/shared
+
+  frontend:
+    container_name: webpaint-frontend
+    hostname: frontend
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    volumes:
+      - ./frontend:/usr/src/app/frontend
+      - ./shared:/usr/src/app/shared
+      - ./assets:/usr/src/app/assets
+    ports:
+      - '8439:8080'
+    depends_on:
+      - "backend"

@@ -3,7 +3,10 @@ filehash = false
 
 [[proxy]]
 rewrite = "/backend"
-backend = "http://127.0.0.1:8432/"
+backend = "http://backend:8432/"
 
 [watch]
 ignore = ["backend", "shared", "assets"]
+
+[serve]
+addresses = ["0.0.0.0"]

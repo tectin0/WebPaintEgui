@@ -16,6 +16,20 @@ impl Line {
             stroke,
         }
     }
+
+    pub fn from_canvas(&mut self, canvas_rect: &egui::Rect) {
+        for pos in self.points.iter_mut() {
+            pos.x = (pos.x - canvas_rect.min.x) / canvas_rect.width();
+            pos.y = (pos.y - canvas_rect.min.y) / canvas_rect.height();
+        }
+    }
+
+    pub fn to_canvas(&mut self, canvas_rect: &egui::Rect) {
+        for pos in self.points.iter_mut() {
+            pos.x = pos.x * canvas_rect.width() + canvas_rect.min.x;
+            pos.y = pos.y * canvas_rect.height() + canvas_rect.min.y;
+        }
+    }
 }
 
 impl std::ops::Deref for Line {
@@ -38,6 +52,28 @@ pub struct Lines(pub BTreeMap<u64, Line>);
 impl Lines {
     pub fn update_from_other(&mut self, other: Lines) {
         self.0.extend(other.0);
+    }
+
+    pub fn from_canvas(&mut self, canvas_rect: &egui::Rect) {
+        for line in self.0.values_mut() {
+            line.from_canvas(canvas_rect);
+        }
+    }
+
+    pub fn to_canvas(&mut self, canvas_rect: &egui::Rect) {
+        for line in self.0.values_mut() {
+            line.to_canvas(canvas_rect);
+        }
+    }
+}
+
+impl FromIterator<(u64, Line)> for Lines {
+    fn from_iter<T: IntoIterator<Item = (u64, Line)>>(iter: T) -> Self {
+        let mut lines = Lines::default();
+        for (id, line) in iter {
+            lines.0.insert(id, line);
+        }
+        lines
     }
 }
 

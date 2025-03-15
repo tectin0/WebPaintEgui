@@ -1,9 +1,10 @@
 use core::num;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
 use egui::{
-    emath, pos2, vec2, Color32, ColorImage, Context, Frame, Pos2, Rect, Sense, Stroke, TextureId,
-    TextureOptions, Ui, Window,
+    emath, pos2, vec2, Color32, ColorImage, ComboBox, Context, Frame, Pos2, Rect, Sense, Stroke,
+    TextureId, TextureOptions, Ui, Window,
 };
 use egui::{Style, TextureHandle};
 use getrandom::getrandom;
@@ -14,12 +15,10 @@ use std::ops::Add;
 
 use crate::requests::{execute, send_get_request, send_post_request};
 
-const IMAGES: &[(&str, &[u8])] = &include!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "\\..\\assets\\images.in"
-));
+const IMAGES: &[(&str, &[u8])] =
+    &include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../assets/images.in"));
 
-const UPDATE_FREQUENCY: f64 = 5.0;
+const UPDATE_FREQUENCY: f64 = 1.0;
 
 pub struct Channel<T> {
     sender: std::sync::mpsc::Sender<T>,
@@ -27,8 +26,11 @@ pub struct Channel<T> {
 }
 
 pub struct App {
+    location: eframe::Location,
     lines: Lines,
+    lines_already_synced: HashSet<u64>,
     stroke: Stroke,
+    scroll_speed: f32,
     current_background_id: TextureId,
     background_offset: Pos2,
     zoom: f32,
@@ -40,8 +42,23 @@ pub struct App {
     last_id: u64,
 }
 
+const RANDOM_COLORS: &[Color32; 8] = &[
+    Color32::RED,
+    Color32::GREEN,
+    Color32::BLUE,
+    Color32::YELLOW,
+    Color32::ORANGE,
+    Color32::LIGHT_BLUE,
+    Color32::KHAKI,
+    Color32::GOLD,
+];
+
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        log::info!("{:?}", cc.integration_info.web_info.location);
+
+        let location = cc.integration_info.web_info.location.clone();
+
         let texture_handles: HashMap<TextureId, TextureHandle> = IMAGES
             .iter()
             .map(|(file_path, data)| {
@@ -78,13 +95,15 @@ impl App {
 
         let sender = num_connections_channel.sender.clone();
 
+        let url = location.url.clone();
+
         execute(async move {
-            let result = send_get_request("http://localhost:8080/backend/num_connections").await;
+            let result = send_get_request(&format!("{}/backend/num_connections", url)).await;
 
             match result {
                 Ok(num_connections) => {
                     sender
-                        .send(num_connections.parse::<u64>().unwrap())
+                        .send(num_connections.parse::<u64>().unwrap_or_default())
                         .unwrap();
                 }
                 Err(e) => {
@@ -93,12 +112,19 @@ impl App {
             }
         });
 
+        let random_number = get_random_u64();
+
+        let random_color = RANDOM_COLORS[random_number as usize % RANDOM_COLORS.len()];
+
         Self {
+            location,
             lines: Default::default(),
+            lines_already_synced: Default::default(),
             stroke: Stroke {
                 width: 3.0,
-                color: Color32::BLACK,
+                color: random_color,
             },
+            scroll_speed: 10.0,
             current_background_id: texture_handles.keys().next().unwrap().to_owned(),
             texture_handles,
             background_offset: Pos2::ZERO,
@@ -118,18 +144,29 @@ impl eframe::App for App {
             log::info!("Getting lines from backend");
             let sender = self.new_lines_channel.sender.clone();
 
-            execute(async move {
-                let lines = send_get_request("http://localhost:8080/backend/lines").await;
+            if let Some(original_canvas_rect) = self.original_canvas_rect.as_ref() {
+                let original_canvas_rect = original_canvas_rect.clone();
 
-                match lines {
-                    Ok(lines) => {
-                        sender.send(lines.into()).unwrap();
+                let url = self.location.origin.clone();
+
+                execute(async move {
+                    let lines: Result<String, eframe::wasm_bindgen::JsValue> =
+                        send_get_request(&format!("{}/backend/lines", url)).await;
+
+                    match lines {
+                        Ok(lines) => {
+                            let mut lines: Lines = lines.into();
+
+                            lines.to_canvas(&original_canvas_rect);
+
+                            sender.send(lines).unwrap();
+                        }
+                        Err(e) => {
+                            log::error!("Error: {:?}", e);
+                        }
                     }
-                    Err(e) => {
-                        log::error!("Error: {:?}", e);
-                    }
-                }
-            });
+                });
+            }
 
             self.last_update = web_time::Instant::now();
         }
@@ -149,23 +186,39 @@ impl eframe::App for App {
         if let Ok(num_connections) = self.num_connections_channel.receiver.try_recv() {
             log::debug!("Number of connections: {}", num_connections);
 
-            self.stroke.color = match num_connections {
-                0 => Color32::RED,
-                1 => Color32::GREEN,
-                2 => Color32::YELLOW,
-                3 => Color32::ORANGE,
-                4 => Color32::LIGHT_BLUE,
-                5 => Color32::KHAKI,
-                6 => Color32::GOLD,
-                _ => Color32::BLUE,
-            };
+            // TODO: not working
+            // self.stroke.color = match num_connections {
+            //     0 => Color32::RED,
+            //     1 => Color32::GREEN,
+            //     2 => Color32::YELLOW,
+            //     3 => Color32::ORANGE,
+            //     4 => Color32::LIGHT_BLUE,
+            //     5 => Color32::KHAKI,
+            //     6 => Color32::GOLD,
+            //     _ => Color32::BLUE,
+            // };
         }
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 egui::widgets::global_theme_preference_buttons(ui);
 
+                ComboBox::from_id_salt("Images").show_ui(ui, |ui| {
+                    for (id, handle) in self.texture_handles.iter() {
+                        let name = handle.name().split('.').next().unwrap().to_string();
+
+                        if ui
+                            .selectable_value(&mut self.current_background_id, *id, &name)
+                            .clicked()
+                        {
+                            log::info!("Selected image: {}", name);
+                        }
+                    }
+                });
+
                 ui.add(&mut self.stroke);
+
+                ui.add(egui::Slider::new(&mut self.scroll_speed, 1.0..=20.0).text("Scroll speed"));
 
                 ui.button("Clear")
                     .on_hover_text("Clear the canvas")
@@ -174,10 +227,12 @@ impl eframe::App for App {
                         log::info!("Sending clear request");
 
                         self.lines.0.clear();
+                        self.lines_already_synced.clear();
+
+                        let url = self.location.origin.clone();
 
                         execute(async move {
-                            match send_post_request("http://localhost:8080/backend/clear", "").await
-                            {
+                            match send_post_request(&format!("{}/backend/clear", url), "").await {
                                 Ok(_) => {
                                     log::debug!("Successfully cleared lines");
                                 }
@@ -262,7 +317,7 @@ impl eframe::App for App {
 
                 let scroll_delta = response.ctx.input(|i| i.raw_scroll_delta);
 
-                let scroll_delta_y = scroll_delta.y * 1e-3;
+                let scroll_delta_y = scroll_delta.y * self.scroll_speed * 1e-4;
 
                 if scroll_delta_y != 0.0 {
                     self.zoom = (self.zoom - scroll_delta_y).clamp(-2.0, 2.0);
@@ -310,11 +365,14 @@ impl eframe::App for App {
 
                                     for line_id in lines_to_remove.iter() {
                                         self.lines.remove(line_id);
+                                        self.lines_already_synced.remove(line_id);
                                     }
+
+                                    let url = self.location.origin.clone();
 
                                     execute(async move {
                                         match send_post_request(
-                                            "http://localhost:8080/backend/remove_lines",
+                                            &format!("{}/backend/remove_lines", url),
                                             &serde_json::to_string(&lines_to_remove).unwrap(),
                                         )
                                         .await
@@ -345,13 +403,30 @@ impl eframe::App for App {
                             getrandom(&mut buffer).unwrap();
                             let id = u64::from_ne_bytes(buffer);
 
-                            let lines = self.lines.clone();
+                            let lines = self
+                                .lines
+                                .iter()
+                                .filter_map(|(id, line)| {
+                                    if !self.lines_already_synced.contains(id) {
+                                        self.lines_already_synced.insert(*id);
+
+                                        let mut line = line.clone();
+                                        line.from_canvas(&self.original_canvas_rect.unwrap());
+
+                                        Some((*id, line))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect::<Lines>();
 
                             log::info!("Sending lines to backend");
 
+                            let url = self.location.origin.clone();
+
                             execute(async move {
                                 match send_post_request(
-                                    "http://localhost:8080/backend/lines",
+                                    &format!("{}/backend/lines", url),
                                     &lines.to_string(),
                                 )
                                 .await
@@ -387,6 +462,8 @@ impl eframe::App for App {
                 response
             });
         });
+
+        ctx.request_repaint_after(Duration::from_secs(1));
     }
 }
 

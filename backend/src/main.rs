@@ -60,6 +60,7 @@ async fn num_connections() -> impl Responder {
     CONNECTIONS.lock().unwrap().len().to_string()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     std::thread::spawn(|| loop {
@@ -80,7 +81,10 @@ async fn main() -> std::io::Result<()> {
             .service(clear_lines)
             .service(num_connections)
     })
-    .bind(("127.0.0.1", 8432))?
+    .bind(("0.0.0.0", 8432))?
     .run()
     .await
 }
+
+#[cfg(target_arch = "wasm32")]
+fn main() {}

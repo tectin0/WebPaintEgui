@@ -1,0 +1,16 @@
+FROM rust
+RUN rustup target add wasm32-unknown-unknown
+
+RUN cargo install trunk --locked
+
+WORKDIR /usr/src/app
+COPY Cargo.toml.frontend /usr/src/app/Cargo.toml
+
+COPY index.html /usr/src/app/index.html
+COPY Trunk.toml /usr/src/app/Trunk.toml
+
+RUN mkdir /usr/src/app/backend
+
+ENV RUSTFLAGS="$RUSTFLAGS -Aunused"
+
+CMD ["trunk", "serve"]

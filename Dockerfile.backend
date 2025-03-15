@@ -1,0 +1,9 @@
+FROM rust
+RUN apt update
+
+WORKDIR /usr/src/app
+COPY assets /usr/src/app/assets
+
+COPY Cargo.toml.backend /usr/src/app/Cargo.toml
+
+CMD ["cargo", "run", "--release"]  
